@@ -8,7 +8,7 @@ import os
 
 app = FastAPI()
 
-# ---------- STATS (compteur d'utilisation) ----------
+# ---------- STATS ----------
 
 STATS_FILE = "stats.json"
 
@@ -23,7 +23,7 @@ def save_stats(stats):
         json.dump(stats, f)
 
 
-# ---------- ROUTES UI / BASE ----------
+# ---------- ROUTES UI ----------
 
 @app.get("/", response_class=HTMLResponse)
 def root():
@@ -43,6 +43,7 @@ def app_ui():
     <head>
         <meta charset="UTF-8" />
         <title>JSON Automator – Excel vers JSON</title>
+
         <style>
             body { font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
                    max-width: 960px; margin: 40px auto; padding: 0 16px; color:#111827; }
@@ -58,39 +59,30 @@ def app_ui():
             label { display:block; margin-bottom:4px; font-weight:500; }
             .radio-group { display:flex; gap:16px; margin-top:4px; }
             button { padding:8px 16px; border-radius:6px; border:none; cursor:pointer; font-weight:500; }
-            button#convertBtn { background:#0f766e; color:white; }
-            button#convertBtn:disabled { background:#9ca3af; cursor:not-allowed; }
+            #convertBtn { background:#0f766e; color:white; }
+            #convertBtn:disabled { background:#9ca3af; cursor:not-allowed; }
+            #downloadBtn { background:#2563eb; color:white; margin-left:8px; }
+            #downloadBtn:disabled { background:#9ca3af; }
             pre { background:#111827; color:#e5e7eb; padding:12px; border-radius:8px; overflow-x:auto; font-size:.9rem; }
             .messages { margin-top:8px; color:#92400e; font-size:.9rem; }
-            ul { padding-left:18px; margin:0.25rem 0 0.75rem 0; }
-            table { border-collapse: collapse; width:100%; font-size:.85rem; }
-            th, td { border:1px solid #e5e7eb; padding:6px 8px; text-align:left; }
-            th { background:#f9fafb; }
-            code { background:#f3f4f6; padding:2px 4px; border-radius:4px; font-size:.8rem; }
             .muted { color:#6b7280; font-size:.85rem; }
+            table { border-collapse: collapse; width:100%; font-size:.85rem; }
+            th, td { border:1px solid #e5e7eb; padding:6px 8px; }
+            th { background:#f9fafb; }
         </style>
     </head>
+
     <body>
         <div class="hero">
             <span class="badge">Beta gratuite</span>
             <h1>JSON Automator</h1>
             <p>Convertis tes fichiers Excel de configuration en JSON propre, avec validation automatique.</p>
-            <p class="muted">
-                Idéal si tu maintiens tes configs dans Excel (colonnes <code>key</code> / <code>value</code>) et que tu veux éviter
-                d'écrire du JSON à la main.
-            </p>
         </div>
 
         <div class="grid">
             <div>
                 <div class="card">
                     <h2>1. Utiliser l'outil</h2>
-                    <p><strong>Comment faire&nbsp;?</strong></p>
-                    <ul>
-                        <li>Prépare un Excel avec au minimum les colonnes <code>key</code> et <code>value</code>.</li>
-                        <li>(Optionnel) Ajoute <code>required</code> (yes/no) et <code>type</code> (int/bool/url/string).</li>
-                        <li>Choisis ton fichier, sélectionne le mode, clique sur <strong>Convertir</strong>.</li>
-                    </ul>
 
                     <div class="row">
                         <label for="fileInput">Fichier Excel (.xlsx)</label>
@@ -107,6 +99,7 @@ def app_ui():
 
                     <div class="row">
                         <button id="convertBtn">Convertir</button>
+                        <button id="downloadBtn" disabled>Télécharger JSON</button>
                     </div>
                 </div>
 
@@ -120,103 +113,81 @@ def app_ui():
             <div>
                 <div class="card">
                     <h2>Format Excel attendu</h2>
-                    <p class="muted">Exemple minimal pour le mode <code>Config key/value</code> :</p>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>key</th>
-                                <th>value</th>
-                                <th>required (optionnel)</th>
-                                <th>type (optionnel)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>api_url</td>
-                                <td>https://api.example.com</td>
-                                <td>yes</td>
-                                <td>url</td>
-                            </tr>
-                            <tr>
-                                <td>timeout</td>
-                                <td>30</td>
-                                <td>no</td>
-                                <td>int</td>
-                            </tr>
-                            <tr>
-                                <td>use_cache</td>
-                                <td>true</td>
-                                <td>no</td>
-                                <td>bool</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p class="muted" style="margin-top:8px;">
-                        La validation signale les valeurs obligatoires manquantes, les erreurs de type
-                        (<code>int</code>, <code>bool</code>, <code>url</code>, etc.) et les clés dupliquées.
-                    </p>
-                </div>
+                    <p class="muted">Exemple minimal :</p>
 
-                <div class="card">
-                    <h2>À propos</h2>
-                    <p>
-                        JSON Automator est en bêta. L'objectif est de supprimer les étapes manuelles répétitives
-                        entre Excel et vos fichiers de configuration JSON.
-                    </p>
-                    <p class="muted">
-                        Si l'outil t'est utile ou si tu vois une fonctionnalité évidente à ajouter,
-                        n'hésite pas à ouvrir une issue sur le dépôt GitHub ou à partager ce lien.
-                    </p>
+                    <table>
+                        <tr><th>key</th><th>value</th><th>required</th><th>type</th></tr>
+                        <tr><td>api_url</td><td>https://api.example.com</td><td>yes</td><td>url</td></tr>
+                        <tr><td>timeout</td><td>30</td><td>no</td><td>int</td></tr>
+                        <tr><td>use_cache</td><td>true</td><td>no</td><td>bool</td></tr>
+                    </table>
+
+                    <p class="muted">Validation automatique (entiers, booléens, URLs, champs manquants…).</p>
                 </div>
             </div>
         </div>
 
         <script>
             const btn = document.getElementById('convertBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
             const fileInput = document.getElementById('fileInput');
             const resultPre = document.getElementById('result');
             const messagesDiv = document.getElementById('messages');
+
+            let lastResult = null;
 
             btn.addEventListener('click', async () => {
                 const file = fileInput.files[0];
                 if (!file) { alert("Merci de sélectionner un fichier .xlsx"); return; }
 
-                const mode = document.querySelector('input[name="mode"]:checked').value;
+                const mode = document.querySelector('input[name=\"mode\"]:checked').value;
                 const endpoint = mode === 'rows' ? '/convert' : '/convert/config';
 
                 const formData = new FormData();
                 formData.append('file', file);
 
                 btn.disabled = true;
+                downloadBtn.disabled = true;
                 btn.textContent = "Conversion...";
-                resultPre.textContent = "{}";
                 messagesDiv.textContent = "";
+                resultPre.textContent = "{}";
 
                 try {
                     const res = await fetch(endpoint, { method: 'POST', body: formData });
-                    const type = res.headers.get('content-type') || '';
+                    const data = await res.json();
 
                     if (!res.ok) {
-                        if (type.includes('application/json')) {
-                            const err = await res.json();
-                            if (err.detail && err.detail.messages)
-                                messagesDiv.textContent = err.detail.messages.join(' | ');
-                            else messagesDiv.textContent = JSON.stringify(err.detail || err);
-                        } else messagesDiv.textContent = "Erreur serveur";
+                        messagesDiv.textContent = JSON.stringify(data.detail || data);
                         return;
                     }
 
-                    const data = await res.json();
+                    lastResult = data;
+                    downloadBtn.disabled = false;
                     resultPre.textContent = JSON.stringify(data, null, 2);
-                    if (data.messages?.length) messagesDiv.textContent = data.messages.join(' | ');
                 }
                 catch {
-                    messagesDiv.textContent = "Erreur de connexion au serveur";
+                    messagesDiv.textContent = "Erreur réseau";
                 }
                 finally {
                     btn.disabled = false;
                     btn.textContent = "Convertir";
                 }
+            });
+
+            downloadBtn.addEventListener('click', () => {
+                if (!lastResult) return;
+
+                const blob = new Blob(
+                    [JSON.stringify(lastResult, null, 2)],
+                    { type: "application/json" }
+                );
+
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "result.json";
+                a.click();
+                URL.revokeObjectURL(url);
             });
         </script>
     </body>
@@ -236,78 +207,47 @@ def parse_excel_to_json(file_bytes: bytes) -> List[Dict[str, Any]]:
     sheet = workbook.active
     headers = [str(c.value) if c.value is not None else "" for c in sheet[1]]
 
-    if not any(headers):
-        raise HTTPException(status_code=400, detail="La première ligne doit contenir des en-têtes.")
-
-    rows: List[Dict[str, Any]] = []
-
+    rows = []
     for row in sheet.iter_rows(min_row=2, values_only=True):
-        d: Dict[str, Any] = {}
-        for idx, v in enumerate(row):
-            name = headers[idx] if idx < len(headers) else f"col_{idx}"
-            d[name] = v
+        d = {headers[i] if i < len(headers) else f"col_{i}": v for i, v in enumerate(row)}
         if any(v not in (None, "") for v in d.values()):
             rows.append(d)
-
     return rows
 
 
 def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[str]]:
-    config: Dict[str, Any] = {}
-    messages: List[str] = []
-
-    if not rows:
-        messages.append("Aucune ligne de données.")
-        return config, messages
-
-    first = rows[0]
-    if "key" not in first or "value" not in first:
-        messages.append("Les colonnes 'key' et 'value' sont obligatoires.")
-        return config, messages
-
+    config = {}
+    messages = []
     seen = set()
 
     for idx, row in enumerate(rows, start=2):
-        key = row.get("key")
+        key = str(row.get("key", "")).strip()
         value = row.get("value")
-        required = str(row.get("required", "no")).strip().lower()
-        value_type = str(row.get("type", "string")).strip().lower()
+        required = str(row.get("required", "no")).lower()
+        value_type = str(row.get("type", "string")).lower()
 
-        if not key or str(key).strip() == "":
+        if not key:
             messages.append(f"Ligne {idx}: clé vide — ignorée.")
             continue
 
-        k = str(key).strip()
-
-        if k in seen:
-            messages.append(f"Ligne {idx}: clé '{k}' dupliquée — écrasement.")
-        seen.add(k)
-
-        if required == "yes" and (value is None or str(value) == ""):
-            messages.append(f"Ligne {idx}: valeur obligatoire manquante pour '{k}'.")
+        if key in seen:
+            messages.append(f"Ligne {idx}: clé '{key}' dupliquée — écrasement.")
+        seen.add(key)
 
         converted = value
         if value_type == "int":
-            try:
-                converted = int(value)
-            except:
-                messages.append(f"Ligne {idx}: '{k}' doit être un entier.")
+            try: converted = int(value)
+            except: messages.append(f"Ligne {idx}: '{key}' doit être un entier.")
         elif value_type == "bool":
-            s = str(value).lower()
-            if s in ["true","1","yes"]:
-                converted = True
-            elif s in ["false","0","no"]:
-                converted = False
-            else:
-                messages.append(f"Ligne {idx}: '{k}' doit être un booléen (true/false).")
+            converted = str(value).lower() in ["true","1","yes"]
         elif value_type == "url":
             if not str(value).startswith(("http://","https://")):
-                messages.append(f"Ligne {idx}: '{k}' doit être une URL valide (http/https).")
+                messages.append(f"Ligne {idx}: '{key}' doit être une URL valide.")
 
-        config[k] = converted
+        if required == "yes" and (value is None or value == ""):
+            messages.append(f"Ligne {idx}: valeur obligatoire manquante pour '{key}'.")
 
-    if not config:
-        messages.append("Aucune entrée valide générée.")
+        config[key] = converted
 
     return config, messages
 
@@ -315,10 +255,7 @@ def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any]
 # ---------- API ----------
 
 @app.post("/convert")
-async def convert_excel_to_json(file: UploadFile = File(...)):
-    if not file.filename.endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Seuls les .xlsx sont supportés.")
-
+async def convert_excel_to_json_api(file: UploadFile = File(...)):
     rows = parse_excel_to_json(await file.read())
 
     stats = load_stats()
@@ -326,14 +263,11 @@ async def convert_excel_to_json(file: UploadFile = File(...)):
     stats["rows"] += 1
     save_stats(stats)
 
-    return JSONResponse(content={"rows": rows})
+    return {"rows": rows}
 
 
 @app.post("/convert/config")
-async def convert_excel_to_config(file: UploadFile = File(...)):
-    if not file.filename.endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Seuls les .xlsx sont supportés.")
-
+async def convert_excel_to_config_api(file: UploadFile = File(...)):
     rows = parse_excel_to_json(await file.read())
     config, messages = rows_to_config_key_value(rows)
 
@@ -345,10 +279,8 @@ async def convert_excel_to_config(file: UploadFile = File(...)):
     if not config:
         raise HTTPException(status_code=400, detail={"messages": messages})
 
-    return JSONResponse(content={"config": config, "messages": messages})
+    return {"config": config, "messages": messages}
 
-
-# ---------- ADMIN (statistiques) ----------
 
 @app.get("/_admin/stats")
 def get_stats():
