@@ -1,12 +1,18 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from typing import List, Dict, Any, Tuple
 import openpyxl
 from io import BytesIO
 
 app = FastAPI()
 
-# ---------- ROUTES UI ----------
+# ---------- ROUTES DE BASE / UI ----------
+
+@app.get("/", response_class=HTMLResponse)
+def root():
+    # Redirige vers l'interface
+    return RedirectResponse(url="/app")
+
 
 @app.get("/status")
 def status():
@@ -81,8 +87,10 @@ def app_ui():
                 const formData = new FormData();
                 formData.append('file', file);
 
-                btn.disabled = true; btn.textContent = "Conversion...";
-                resultPre.textContent = "{}"; messagesDiv.textContent = "";
+                btn.disabled = true;
+                btn.textContent = "Conversion...";
+                resultPre.textContent = "{}";
+                messagesDiv.textContent = "";
 
                 try {
                     const res = await fetch(endpoint, { method: 'POST', body: formData });
@@ -101,11 +109,13 @@ def app_ui():
                     const data = await res.json();
                     resultPre.textContent = JSON.stringify(data, null, 2);
                     if (data.messages?.length) messagesDiv.textContent = data.messages.join(' | ');
-
-                } catch {
+                }
+                catch {
                     messagesDiv.textContent = "Erreur de connexion au serveur";
-                } finally {
-                    btn.disabled = false; btn.textContent = "Convertir";
+                }
+                finally {
+                    btn.disabled = false;
+                    btn.textContent = "Convertir";
                 }
             });
         </script>
@@ -113,6 +123,7 @@ def app_ui():
     </html>
     """
     return HTMLResponse(content=html_content)
+
 
 # ---------- LOGIQUE EXCEL ----------
 
@@ -185,13 +196,18 @@ def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any]
 
         converted = value
         if value_type == "int":
-            try: converted = int(value)
-            except: messages.append(f"Ligne {idx}: '{k}' doit être un entier.")
+            try:
+                converted = int(value)
+            except:
+                messages.append(f"Ligne {idx}: '{k}' doit être un entier.")
         elif value_type == "bool":
             s = str(value).lower()
-            if s in ["true","1","yes"]: converted = True
-            elif s in ["false","0","no"]: converted = False
-            else: messages.append(f"Ligne {idx}: '{k}' doit être un booléen (true/false).")
+            if s in ["true","1","yes"]:
+                converted = True
+            elif s in ["false","0","no"]:
+                converted = False
+            else:
+                messages.append(f"Ligne {idx}: '{k}' doit être un booléen (true/false).")
         elif value_type == "url":
             if not str(value).startswith(("http://","https://")):
                 messages.append(f"Ligne {idx}: '{k}' doit être une URL valide (http/https).")
