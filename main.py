@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse, FileResponse
 from typing import List, Dict, Any, Tuple
 import openpyxl
 from io import BytesIO
@@ -63,6 +63,7 @@ def app_ui():
             #convertBtn:disabled { background:#9ca3af; cursor:not-allowed; }
             #downloadBtn { background:#2563eb; color:white; margin-left:8px; }
             #downloadBtn:disabled { background:#9ca3af; }
+            #exampleBtn { background:#6b7280; color:white; margin-left:8px; }
             pre { background:#111827; color:#e5e7eb; padding:12px; border-radius:8px; overflow-x:auto; font-size:.9rem; }
             .messages { margin-top:8px; color:#92400e; font-size:.9rem; }
             .muted { color:#6b7280; font-size:.85rem; }
@@ -100,6 +101,7 @@ def app_ui():
                     <div class="row">
                         <button id="convertBtn">Convertir</button>
                         <button id="downloadBtn" disabled>Télécharger JSON</button>
+                        <button id="exampleBtn" type="button">Télécharger un exemple (.xlsx)</button>
                     </div>
                 </div>
 
@@ -130,6 +132,7 @@ def app_ui():
         <script>
             const btn = document.getElementById('convertBtn');
             const downloadBtn = document.getElementById('downloadBtn');
+            const exampleBtn = document.getElementById('exampleBtn');
             const fileInput = document.getElementById('fileInput');
             const resultPre = document.getElementById('result');
             const messagesDiv = document.getElementById('messages');
@@ -140,7 +143,7 @@ def app_ui():
                 const file = fileInput.files[0];
                 if (!file) { alert("Merci de sélectionner un fichier .xlsx"); return; }
 
-                const mode = document.querySelector('input[name=\"mode\"]:checked').value;
+                const mode = document.querySelector('input[name="mode"]:checked').value;
                 const endpoint = mode === 'rows' ? '/convert' : '/convert/config';
 
                 const formData = new FormData();
@@ -154,18 +157,29 @@ def app_ui():
 
                 try {
                     const res = await fetch(endpoint, { method: 'POST', body: formData });
+                    const type = res.headers.get('content-type') || '';
                     const data = await res.json();
 
                     if (!res.ok) {
-                        messagesDiv.textContent = JSON.stringify(data.detail || data);
+                        if (type.includes('application/json')) {
+                            if (data.detail && data.detail.messages)
+                                messagesDiv.textContent = data.detail.messages.join(' | ');
+                            else
+                                messagesDiv.textContent = JSON.stringify(data.detail || data);
+                        } else {
+                            messagesDiv.textContent = "Erreur serveur";
+                        }
                         return;
                     }
 
                     lastResult = data;
                     downloadBtn.disabled = false;
                     resultPre.textContent = JSON.stringify(data, null, 2);
+                    if (data.messages?.length) {
+                        messagesDiv.textContent = data.messages.join(' | ');
+                    }
                 }
-                catch {
+                catch (e) {
                     messagesDiv.textContent = "Erreur réseau";
                 }
                 finally {
@@ -189,6 +203,10 @@ def app_ui():
                 a.click();
                 URL.revokeObjectURL(url);
             });
+
+            exampleBtn.addEventListener('click', () => {
+                window.location.href = "/example";
+            });
         </script>
     </body>
     </html>
@@ -207,47 +225,78 @@ def parse_excel_to_json(file_bytes: bytes) -> List[Dict[str, Any]]:
     sheet = workbook.active
     headers = [str(c.value) if c.value is not None else "" for c in sheet[1]]
 
-    rows = []
+    if not any(headers):
+        raise HTTPException(status_code=400, detail="La première ligne doit contenir des en-têtes.")
+
+    rows: List[Dict[str, Any]] = []
+
     for row in sheet.iter_rows(min_row=2, values_only=True):
-        d = {headers[i] if i < len(headers) else f"col_{i}": v for i, v in enumerate(row)}
+        d: Dict[str, Any] = {}
+        for idx, v in enumerate(row):
+            col_name = headers[idx] if idx < len(headers) else f"col_{idx}"
+            d[col_name] = v
         if any(v not in (None, "") for v in d.values()):
             rows.append(d)
+
     return rows
 
 
 def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[str]]:
-    config = {}
-    messages = []
+    config: Dict[str, Any] = {}
+    messages: List[str] = []
+
+    if not rows:
+        messages.append("Aucune ligne de données.")
+        return config, messages
+
+    first = rows[0]
+    if "key" not in first or "value" not in first:
+        messages.append("Les colonnes 'key' et 'value' sont obligatoires.")
+        return config, messages
+
     seen = set()
 
     for idx, row in enumerate(rows, start=2):
-        key = str(row.get("key", "")).strip()
+        key_raw = row.get("key")
         value = row.get("value")
-        required = str(row.get("required", "no")).lower()
-        value_type = str(row.get("type", "string")).lower()
+        required = str(row.get("required", "no")).strip().lower()
+        value_type = str(row.get("type", "string")).strip().lower()
 
-        if not key:
+        if not key_raw or str(key_raw).strip() == "":
             messages.append(f"Ligne {idx}: clé vide — ignorée.")
             continue
+
+        key = str(key_raw).strip()
 
         if key in seen:
             messages.append(f"Ligne {idx}: clé '{key}' dupliquée — écrasement.")
         seen.add(key)
 
-        converted = value
-        if value_type == "int":
-            try: converted = int(value)
-            except: messages.append(f"Ligne {idx}: '{key}' doit être un entier.")
-        elif value_type == "bool":
-            converted = str(value).lower() in ["true","1","yes"]
-        elif value_type == "url":
-            if not str(value).startswith(("http://","https://")):
-                messages.append(f"Ligne {idx}: '{key}' doit être une URL valide.")
-
-        if required == "yes" and (value is None or value == ""):
+        if required == "yes" and (value is None or str(value) == ""):
             messages.append(f"Ligne {idx}: valeur obligatoire manquante pour '{key}'.")
 
+        converted = value
+        if value_type == "int":
+            try:
+                converted = int(value)
+            except Exception:
+                messages.append(f"Ligne {idx}: '{key}' doit être un entier.")
+        elif value_type == "bool":
+            s = str(value).lower()
+            if s in ["true", "1", "yes"]:
+                converted = True
+            elif s in ["false", "0", "no"]:
+                converted = False
+            else:
+                messages.append(f"Ligne {idx}: '{key}' doit être un booléen (true/false, yes/no).")
+        elif value_type == "url":
+            if not str(value).startswith(("http://", "https://")):
+                messages.append(f"Ligne {idx}: '{key}' doit être une URL valide (http/https).")
+
         config[key] = converted
+
+    if not config:
+        messages.append("Aucune entrée valide générée.")
 
     return config, messages
 
@@ -256,6 +305,9 @@ def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any]
 
 @app.post("/convert")
 async def convert_excel_to_json_api(file: UploadFile = File(...)):
+    if not file.filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Seuls les fichiers .xlsx sont supportés.")
+
     rows = parse_excel_to_json(await file.read())
 
     stats = load_stats()
@@ -263,11 +315,14 @@ async def convert_excel_to_json_api(file: UploadFile = File(...)):
     stats["rows"] += 1
     save_stats(stats)
 
-    return {"rows": rows}
+    return JSONResponse(content={"rows": rows})
 
 
 @app.post("/convert/config")
 async def convert_excel_to_config_api(file: UploadFile = File(...)):
+    if not file.filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Seuls les fichiers .xlsx sont supportés.")
+
     rows = parse_excel_to_json(await file.read())
     config, messages = rows_to_config_key_value(rows)
 
@@ -279,8 +334,24 @@ async def convert_excel_to_config_api(file: UploadFile = File(...)):
     if not config:
         raise HTTPException(status_code=400, detail={"messages": messages})
 
-    return {"config": config, "messages": messages}
+    return JSONResponse(content={"config": config, "messages": messages})
 
+
+# ---------- EXEMPLE EXCEL ----------
+
+@app.get("/example")
+def download_example():
+    """
+    Télécharge un fichier Excel d'exemple.
+    Assure-toi que 'example.xlsx' est présent à la racine du projet.
+    """
+    example_path = "example.xlsx"
+    if not os.path.exists(example_path):
+        raise HTTPException(status_code=404, detail="Fichier exemple non trouvé.")
+    return FileResponse(example_path, filename="example.xlsx")
+
+
+# ---------- ADMIN ----------
 
 @app.get("/_admin/stats")
 def get_stats():
