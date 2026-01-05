@@ -10,7 +10,7 @@ app = FastAPI()
 
 @app.get("/", response_class=HTMLResponse)
 def root():
-    # Redirige vers l'interface
+    # Redirige vers l'interface principale
     return RedirectResponse(url="/app")
 
 
@@ -26,12 +26,18 @@ def app_ui():
     <html lang="fr">
     <head>
         <meta charset="UTF-8" />
-        <title>JSON Automator</title>
+        <title>JSON Automator – Excel vers JSON</title>
         <style>
             body { font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-                   max-width: 900px; margin: 40px auto; padding: 0 16px; }
-            h1 { font-size: 1.8rem; margin-bottom: .5rem; }
-            .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+                   max-width: 960px; margin: 40px auto; padding: 0 16px; color:#111827; }
+            h1 { font-size: 2rem; margin-bottom: .5rem; }
+            h2 { font-size: 1.3rem; margin-bottom: .5rem; }
+            p  { margin: 0.25rem 0 0.75rem 0; }
+            .hero { margin-bottom: 24px; }
+            .badge { display:inline-block; font-size:.75rem; padding:2px 8px;
+                     border-radius:999px; background:#ecfdf5; color:#047857; margin-bottom:8px; }
+            .grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:24px; align-items:flex-start; }
+            .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 24px; background:white; }
             .row { margin-bottom: 12px; }
             label { display:block; margin-bottom:4px; font-weight:500; }
             .radio-group { display:flex; gap:16px; margin-top:4px; }
@@ -40,35 +46,113 @@ def app_ui():
             button#convertBtn:disabled { background:#9ca3af; cursor:not-allowed; }
             pre { background:#111827; color:#e5e7eb; padding:12px; border-radius:8px; overflow-x:auto; font-size:.9rem; }
             .messages { margin-top:8px; color:#92400e; font-size:.9rem; }
+            ul { padding-left:18px; margin:0.25rem 0 0.75rem 0; }
+            table { border-collapse: collapse; width:100%; font-size:.85rem; }
+            th, td { border:1px solid #e5e7eb; padding:6px 8px; text-align:left; }
+            th { background:#f9fafb; }
+            code { background:#f3f4f6; padding:2px 4px; border-radius:4px; font-size:.8rem; }
+            .muted { color:#6b7280; font-size:.85rem; }
         </style>
     </head>
     <body>
-        <h1>JSON Automator</h1>
-        <p>Convertis un fichier Excel (.xlsx) en JSON : soit brut (rows), soit en config key/value.</p>
+        <div class="hero">
+            <span class="badge">Beta gratuite</span>
+            <h1>JSON Automator</h1>
+            <p>Convertis tes fichiers Excel de configuration en JSON propre, avec validation automatique.</p>
+            <p class="muted">
+                Idéal si tu maintiens tes configs dans Excel (colonnes <code>key</code> / <code>value</code>) et que tu veux éviter
+                d'écrire du JSON à la main.
+            </p>
+        </div>
 
-        <div class="card">
-            <div class="row">
-                <label for="fileInput">Fichier Excel (.xlsx)</label>
-                <input type="file" id="fileInput" accept=".xlsx" />
-            </div>
+        <div class="grid">
+            <div>
+                <div class="card">
+                    <h2>1. Utiliser l'outil</h2>
+                    <p><strong>Comment faire&nbsp;?</strong></p>
+                    <ul>
+                        <li>Prépare un Excel avec au minimum les colonnes <code>key</code> et <code>value</code>.</li>
+                        <li>(Optionnel) Ajoute <code>required</code> (yes/no) et <code>type</code> (int/bool/url/string).</li>
+                        <li>Choisis ton fichier, sélectionne le mode, clique sur <strong>Convertir</strong>.</li>
+                    </ul>
 
-            <div class="row">
-                <label>Mode de conversion</label>
-                <div class="radio-group">
-                    <label><input type="radio" name="mode" value="rows" checked /> Rows (debug)</label>
-                    <label><input type="radio" name="mode" value="config" /> Config key/value</label>
+                    <div class="row">
+                        <label for="fileInput">Fichier Excel (.xlsx)</label>
+                        <input type="file" id="fileInput" accept=".xlsx" />
+                    </div>
+
+                    <div class="row">
+                        <label>Mode de conversion</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="mode" value="rows" checked /> Rows (debug)</label>
+                            <label><input type="radio" name="mode" value="config" /> Config key/value</label>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <button id="convertBtn">Convertir</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>2. Résultat JSON</h2>
+                    <pre id="result">{}</pre>
+                    <div id="messages" class="messages"></div>
                 </div>
             </div>
 
-            <div class="row">
-                <button id="convertBtn">Convertir</button>
-            </div>
-        </div>
+            <div>
+                <div class="card">
+                    <h2>Format Excel attendu</h2>
+                    <p class="muted">Exemple minimal pour le mode <code>Config key/value</code> :</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>key</th>
+                                <th>value</th>
+                                <th>required (optionnel)</th>
+                                <th>type (optionnel)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>api_url</td>
+                                <td>https://api.example.com</td>
+                                <td>yes</td>
+                                <td>url</td>
+                            </tr>
+                            <tr>
+                                <td>timeout</td>
+                                <td>30</td>
+                                <td>no</td>
+                                <td>int</td>
+                            </tr>
+                            <tr>
+                                <td>use_cache</td>
+                                <td>true</td>
+                                <td>no</td>
+                                <td>bool</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="muted" style="margin-top:8px;">
+                        La validation signale les valeurs obligatoires manquantes, les erreurs de type
+                        (<code>int</code>, <code>bool</code>, <code>url</code>, etc.) et les clés dupliquées.
+                    </p>
+                </div>
 
-        <div class="card">
-            <h2>Résultat JSON</h2>
-            <pre id="result">{}</pre>
-            <div id="messages" class="messages"></div>
+                <div class="card">
+                    <h2>À propos</h2>
+                    <p>
+                        JSON Automator est en bêta. L'objectif est de supprimer les étapes manuelles répétitives
+                        entre Excel et vos fichiers de configuration JSON.
+                    </p>
+                    <p class="muted">
+                        Si l'outil t'est utile ou si tu vois une fonctionnalité évidente à ajouter,
+                        n'hésite pas à ouvrir une issue sur le dépôt GitHub ou à partager ce lien.
+                    </p>
+                </div>
+            </div>
         </div>
 
         <script>
