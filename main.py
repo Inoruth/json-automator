@@ -3,14 +3,30 @@ from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from typing import List, Dict, Any, Tuple
 import openpyxl
 from io import BytesIO
+import json
+import os
 
 app = FastAPI()
 
-# ---------- ROUTES DE BASE / UI ----------
+# ---------- STATS (compteur d'utilisation) ----------
+
+STATS_FILE = "stats.json"
+
+def load_stats():
+    if not os.path.exists(STATS_FILE):
+        return {"total": 0, "rows": 0, "config": 0}
+    with open(STATS_FILE, "r") as f:
+        return json.load(f)
+
+def save_stats(stats):
+    with open(STATS_FILE, "w") as f:
+        json.dump(stats, f)
+
+
+# ---------- ROUTES UI / BASE ----------
 
 @app.get("/", response_class=HTMLResponse)
 def root():
-    # Redirige vers l'interface principale
     return RedirectResponse(url="/app")
 
 
@@ -237,14 +253,6 @@ def parse_excel_to_json(file_bytes: bytes) -> List[Dict[str, Any]]:
 
 
 def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[str]]:
-    """
-    Colonnes minimales :
-      - key
-      - value
-    Colonnes optionnelles :
-      - required : yes/no
-      - type : int/bool/url/string
-    """
     config: Dict[str, Any] = {}
     messages: List[str] = []
 
@@ -310,7 +318,14 @@ def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any]
 async def convert_excel_to_json(file: UploadFile = File(...)):
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Seuls les .xlsx sont supportés.")
+
     rows = parse_excel_to_json(await file.read())
+
+    stats = load_stats()
+    stats["total"] += 1
+    stats["rows"] += 1
+    save_stats(stats)
+
     return JSONResponse(content={"rows": rows})
 
 
@@ -318,10 +333,23 @@ async def convert_excel_to_json(file: UploadFile = File(...)):
 async def convert_excel_to_config(file: UploadFile = File(...)):
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Seuls les .xlsx sont supportés.")
+
     rows = parse_excel_to_json(await file.read())
     config, messages = rows_to_config_key_value(rows)
+
+    stats = load_stats()
+    stats["total"] += 1
+    stats["config"] += 1
+    save_stats(stats)
 
     if not config:
         raise HTTPException(status_code=400, detail={"messages": messages})
 
     return JSONResponse(content={"config": config, "messages": messages})
+
+
+# ---------- ADMIN (statistiques) ----------
+
+@app.get("/_admin/stats")
+def get_stats():
+    return load_stats()
