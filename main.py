@@ -12,31 +12,73 @@ app = FastAPI()
 
 STATS_FILE = "stats.json"
 
-def load_stats():
+
+def load_stats() -> Dict[str, int]:
+    """
+    Load usage statistics from the JSON file.
+
+    Returns a dictionary with:
+    - total: number of conversions (rows + config)
+    - rows: number of 'rows' mode conversions
+    - config: number of 'config' mode conversions
+    """
     if not os.path.exists(STATS_FILE):
         return {"total": 0, "rows": 0, "config": 0}
     with open(STATS_FILE, "r") as f:
         return json.load(f)
 
-def save_stats(stats):
+
+def save_stats(stats: Dict[str, int]) -> None:
+    """
+    Persist usage statistics to the JSON file.
+
+    Parameters
+    ----------
+    stats : dict
+        Dictionary returned by load_stats(), updated with new counts.
+    """
     with open(STATS_FILE, "w") as f:
         json.dump(stats, f)
 
 
 # ---------- ROUTES UI ----------
 
+
 @app.get("/", response_class=HTMLResponse)
 def root():
+    """
+    Redirect root URL to the main web UI (under /app).
+
+    This keeps the public entrypoint simple:
+    - /       -> redirect
+    - /app    -> HTML interface
+    """
     return RedirectResponse(url="/app")
 
 
 @app.get("/status")
 def status():
+    """
+    Healthcheck endpoint.
+
+    Can be used by monitoring or platform checks to verify
+    that the application is up and running.
+    """
     return {"status": "ok", "message": "JSON Automator en route 🚀"}
 
 
 @app.get("/app", response_class=HTMLResponse)
 def app_ui():
+    """
+    Serve the main HTML UI.
+
+    The UI lets the user:
+    - upload an Excel file (.xlsx)
+    - choose conversion mode (rows / config)
+    - visualize the JSON result
+    - download the JSON
+    - download an example Excel file
+    """
     html_content = """
     <!DOCTYPE html>
     <html lang="fr">
@@ -216,7 +258,27 @@ def app_ui():
 
 # ---------- LOGIQUE EXCEL ----------
 
+
 def parse_excel_to_json(file_bytes: bytes) -> List[Dict[str, Any]]:
+    """
+    Parse the first sheet of an Excel workbook into a list of row dictionaries.
+
+    Parameters
+    ----------
+    file_bytes : bytes
+        Raw content of the uploaded .xlsx file.
+
+    Returns
+    -------
+    list[dict]
+        One dict per non-empty row. Keys come from the header row (row 1),
+        values from subsequent rows.
+
+    Raises
+    ------
+    HTTPException (400)
+        If the file is not a valid Excel workbook or the header row is empty.
+    """
     try:
         workbook = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
     except Exception:
@@ -235,6 +297,7 @@ def parse_excel_to_json(file_bytes: bytes) -> List[Dict[str, Any]]:
         for idx, v in enumerate(row):
             col_name = headers[idx] if idx < len(headers) else f"col_{idx}"
             d[col_name] = v
+        # Ignore fully empty rows
         if any(v not in (None, "") for v in d.values()):
             rows.append(d)
 
@@ -242,6 +305,32 @@ def parse_excel_to_json(file_bytes: bytes) -> List[Dict[str, Any]]:
 
 
 def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[str]]:
+    """
+    Convert a list of row dictionaries into a config object.
+
+    Expected columns (case-sensitive):
+    - key (required)
+    - value (required)
+    - required (optional, yes/no)
+    - type (optional, string/int/bool/url)
+
+    The function:
+    - builds a config dict: {key: converted_value}
+    - validates required fields and basic types
+    - collects warnings / errors in a list of messages
+
+    Parameters
+    ----------
+    rows : list[dict]
+        Output of parse_excel_to_json().
+
+    Returns
+    -------
+    config : dict
+        Final configuration object.
+    messages : list[str]
+        Validation messages (warnings / errors). Can be empty.
+    """
     config: Dict[str, Any] = {}
     messages: List[str] = []
 
@@ -303,8 +392,17 @@ def rows_to_config_key_value(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Any]
 
 # ---------- API ----------
 
+
 @app.post("/convert")
 async def convert_excel_to_json_api(file: UploadFile = File(...)):
+    """
+    API endpoint for the 'rows' mode.
+
+    - Accepts an Excel file (.xlsx)
+    - Parses it into a list of row dictionaries
+    - Updates usage statistics
+    - Returns: {"rows": [...]}
+    """
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Seuls les fichiers .xlsx sont supportés.")
 
@@ -320,6 +418,15 @@ async def convert_excel_to_json_api(file: UploadFile = File(...)):
 
 @app.post("/convert/config")
 async def convert_excel_to_config_api(file: UploadFile = File(...)):
+    """
+    API endpoint for the 'config' mode.
+
+    - Accepts an Excel file (.xlsx)
+    - Parses it into rows
+    - Builds a config object using rows_to_config_key_value()
+    - Updates usage statistics
+    - On error: returns HTTP 400 with validation messages
+    """
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Seuls les fichiers .xlsx sont supportés.")
 
@@ -332,6 +439,7 @@ async def convert_excel_to_config_api(file: UploadFile = File(...)):
     save_stats(stats)
 
     if not config:
+        # All messages are returned to the client when nothing valid is produced
         raise HTTPException(status_code=400, detail={"messages": messages})
 
     return JSONResponse(content={"config": config, "messages": messages})
@@ -339,11 +447,14 @@ async def convert_excel_to_config_api(file: UploadFile = File(...)):
 
 # ---------- EXEMPLE EXCEL ----------
 
+
 @app.get("/example")
 def download_example():
     """
-    Télécharge un fichier Excel d'exemple.
-    Assure-toi que 'example.xlsx' est présent à la racine du projet.
+    Download an example Excel file that matches the expected format.
+
+    The file 'example.xlsx' must be present at the project root
+    (same directory as main.py).
     """
     example_path = "example.xlsx"
     if not os.path.exists(example_path):
@@ -353,6 +464,13 @@ def download_example():
 
 # ---------- ADMIN ----------
 
+
 @app.get("/_admin/stats")
 def get_stats():
+    """
+    Return global usage statistics.
+
+    This endpoint is not authenticated because the app is in beta,
+    but it can easily be protected later if needed.
+    """
     return load_stats()
