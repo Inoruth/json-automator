@@ -85,7 +85,7 @@ def app_ui():
             h1 { font-size: 2rem; margin-bottom: .5rem; }
             h2 { font-size: 1.3rem; margin-bottom: .5rem; }
             p  { margin: 0.25rem 0 0.75rem 0; }
-            .hero { margin-bottom: 24px; }
+            .hero { margin-bottom: 16px; }
             .badge { display:inline-block; font-size:.75rem; padding:2px 8px;
                      border-radius:999px; background:#ecfdf5; color:#047857; margin-bottom:8px; }
             .grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:24px; align-items:flex-start; }
@@ -105,6 +105,8 @@ def app_ui():
             table { border-collapse: collapse; width:100%; font-size:.85rem; }
             th, td { border:1px solid #e5e7eb; padding:6px 8px; }
             th { background:#f9fafb; }
+            .notice { background:#eef2ff; border-color:#c7d2fe; }
+            .notice strong { font-weight:600; }
         </style>
     </head>
 
@@ -113,6 +115,15 @@ def app_ui():
             <span class="badge">Free beta</span>
             <h1>JSON Automator</h1>
             <p>Convert Excel config sheets into clean JSON, with basic validation.</p>
+        </div>
+
+        <div class="card notice">
+            <p>
+                <strong>Note:</strong> JSON Automator works best for
+                <strong>flat or lightly-nested configuration files</strong>
+                (API settings, feature flags, app configs, etc.).
+                Support for deep / highly-nested JSON structures is planned.
+            </p>
         </div>
 
         <div class="grid">
