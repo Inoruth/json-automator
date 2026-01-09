@@ -421,12 +421,226 @@ async def convert_excel_to_json_api(file: UploadFile = File(...)):
 
     rows = parse_excel_to_json(await file.read())
 
+<<<<<<< Updated upstream
     stats = load_stats()
     stats["total"] += 1
     stats["rows"] += 1
     save_stats(stats)
 
     return JSONResponse(content={"rows": rows})
+=======
+    # Initialize result container
+    result = {"sheets": {}, "messages": []}
+
+    # Process each sheet in the workbook
+    for sheet_name in workbook.sheetnames:
+        sheet = workbook[sheet_name]
+        headers = [cell.value for cell in sheet[1]]  # Get header row
+
+        # Convert rows to JSON objects
+        rows = []
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            obj = {headers[i]: row[i] for i in range(len(headers))}
+            rows.append(obj)
+
+        # Add to result
+        result["sheets"][sheet_name] = rows
+
+    # Handle different conversion modes
+    if mode == "rows":
+        # "Rows" mode just returns the raw rows as JSON
+        result = {"data": result["sheets"], "messages": result["messages"]}
+    elif mode == "config":
+        # "Config" mode expects two columns: "key" and "value"
+        for sheet_name, rows in result["sheets"].items():
+            for row in rows:
+                if "key" in row and "value" in row:
+                    # Simple key/value pair
+                    result["messages"].append(f"Config: {row['key']} = {row['value']}")
+                else:
+                    result["messages"].append(f"Row in sheet '{sheet_name}' is missing 'key' or 'value': {row}")
+        result = {"data": {}, "messages": result["messages"]}
+    elif mode == "config_schema":
+        # "Schema-based config" mode
+        if not schema_file:
+            raise HTTPException(status_code=400, detail="Schema file is required for 'Schema-based config' mode.")
+
+        # Load schema JSON
+        try:
+            schema_bytes = await schema_file.read();
+            schema = json.loads(schema_bytes.decode("utf-8"));
+        except Exception:
+            raise HTTPException(status_code=400, detail="Schema file is not valid JSON. Upload a .json with the expected structure.");
+
+        # Basic schema checks
+        if not isinstance(schema, dict):
+            raise HTTPException(status_code=400, detail="Schema root must be a JSON object.");
+        if "columns" not in schema or not isinstance(schema.get("columns"), dict):
+            raise HTTPException(status_code=400, detail="Schema must define 'columns' as an object with header aliases.");
+        if "keys" not in schema or not isinstance(schema.get("keys"), dict):
+            raise HTTPException(status_code=400, detail="Schema must define 'keys' as an object with rules per key.");
+
+        # Build alias map for headers
+        alias_map = {};
+        for canonical, aliases in schema["columns"].items():
+            if isinstance(aliases, list):
+                for a in aliases:
+                    alias_map[str(a)] = canonical;
+            alias_map[canonical] = canonical;  # map canonical to itself
+
+        # Normalize headers for each sheet’s rows
+        normalized_sheets = {};
+        for sheet_name, rows in result["sheets"].items():
+            if not rows:
+                normalized_sheets[sheet_name] = [];
+                continue
+            # Use headers from first row keys
+            original_headers = list(rows[0].keys());
+            header_map = {h: alias_map.get(h, h) for h in original_headers};
+            norm_rows = [];
+            for r in rows:
+                nr = {};
+                for k, v in r.items():
+                    nr[header_map.get(k, k)] = v;
+                norm_rows.append(nr);
+            normalized_sheets[sheet_name] = norm_rows;
+
+        # Prepare key rules and alias resolution
+        key_rules = schema.get("keys", {});
+        alias_to_key = {};
+        for k, rule in key_rules.items():
+            if isinstance(rule, dict):
+                for a in (rule.get("aliases", []) or []):
+                    alias_to_key[str(a)] = k;
+
+        allow_extra = bool(schema.get("allow_extra_keys", False));
+
+        # Helper: type conversion
+        def convert_type(val: Any, expected: str, row_idx: int, key: str) -> Any:
+            t = (expected or "string").lower();
+            if t == "int":
+                try:
+                    return int(val);
+                except Exception:
+                    result["messages"].append(f"Row {row_idx}: '{key}' expects an integer. Example: 0, 10, 300.");
+                    return val;
+            if t == "bool":
+                s = str(val).strip().lower();
+                if s in ["true", "1", "yes"]:
+                    return True;
+                if s in ["false", "0", "no"]:
+                    return False;
+                result["messages"].append(f"Row {row_idx}: '{key}' expects a boolean. Use true/false or yes/no.");
+                return val;
+            if t == "url":
+                if str(val).startswith(("http://", "https://")):
+                    return val;
+                result["messages"].append(f"Row {row_idx}: '{key}' expects a URL starting with http:// or https://.");
+                return val;
+            return val;  # string/default
+
+        # Helper: set nested via dot-notation
+        def set_nested(dct: Dict[str, Any], dotted: str, val: Any) -> None:
+            parts = dotted.split(".");
+            cur = dct;
+            for p in parts[:-1]:
+                if p not in cur or not isinstance(cur[p], dict):
+                    cur[p] = {};
+                cur = cur[p];
+            cur[parts[-1]] = val;
+
+        # Build config from normalized rows (first sheet wins; keep current structure minimal)
+        final_config: Dict[str, Any] = {};
+        seen_keys = set();
+
+        # Use all sheets, row numbers restart per sheet (keeps current behavior simple)
+        for sheet_name, rows in normalized_sheets.items():
+            for idx, row in enumerate(rows, start=2):
+                raw_key = row.get("key");
+                value = row.get("value");
+
+                if not raw_key or str(raw_key).strip() == "":
+                    result["messages"].append(f"Row {idx}: The 'key' cell is empty — this row was ignored. Fill in a key name.");
+                    continue;
+
+                key_name = str(raw_key).strip();
+                canonical_key = alias_to_key.get(key_name, key_name);
+                rule = key_rules.get(canonical_key, {});
+
+                # Required handling (Excel 'required' or schema 'required')
+                req_excel = str(row.get("required", "")).strip().lower() == "yes";
+                req_schema = bool(rule.get("required", False));
+                is_required = req_excel or req_schema;
+
+                # Default handling (schema default if Excel value empty)
+                if (value is None or str(value).strip() == "") and ("default" in rule):
+                    value = rule["default"];
+
+                # Required check after default
+                if is_required and (value is None or str(value).strip() == ""):
+                    result["messages"].append(f"Row {idx}: Missing required value for '{canonical_key}'. Enter a value in 'value' or provide a default in the schema.");
+
+                # Type validation (schema type preferred, fallback to Excel 'type')
+                expected_type = str(rule.get("type", row.get("type", "string"))).strip().lower();
+                converted = convert_type(value, expected_type, idx, canonical_key);
+
+                # Duplicate keys warning
+                if canonical_key in seen_keys:
+                    result["messages"].append(f"Row {idx}: Duplicate key '{canonical_key}' — the later value overwrote the earlier one. Use unique keys.");
+                seen_keys.add(canonical_key);
+
+                # Extra key handling
+                if canonical_key not in key_rules and not allow_extra:
+                    result["messages"].append(f"Row {idx}: Key '{canonical_key}' is not defined in the schema. It was ignored because 'allow_extra_keys' is false.");
+                    continue;  # do not include this key in the final config when extras are disallowed
+
+                # Dot-notation nesting
+                set_nested(final_config, canonical_key, converted);
+
+        # Missing required keys from schema
+        for skey, rule in key_rules.items():
+            if rule.get("required", False) and skey not in seen_keys:
+                result["messages"].append(f"Schema required key missing: '{skey}'. Add a row with this key or provide a default in the schema.");
+
+        # Return in the same shape as other modes
+        if not final_config:
+            return JSONResponse(status_code=400, content={"data": {}, "messages": result["messages"]});
+        result = {"data": final_config, "messages": result["messages"]};
+    else:
+        raise HTTPException(status_code=400, detail="Invalid mode. Choose 'rows', 'config', or 'config_schema'.");
+
+    return JSONResponse(content=result);
+
+
+@app.get("/example")
+def get_example_file():
+    """
+    Serve an example Excel file for download.
+    """
+    file_path = "example_config.xlsx";
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Example file not found.");
+    return FileResponse(file_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="example_config.xlsx");
+
+
+@app.get("/stats")
+def get_stats():
+    """
+    Get usage statistics (total conversions, rows mode, config mode).
+    """
+    stats = load_stats();
+    return {"total_conversions": stats["total"], "rows_mode": stats["rows"], "config_mode": stats["config"]};
+
+
+@app.on_event("startup")
+def startup_event():
+    """
+    Application startup event to initialize any required resources.
+    """
+    # Ensure the stats file exists
+    if not os.path.exists(STATS_FILE):
+        save_stats({"total": 0, "rows": 0, "config": 0});
+>>>>>>> Stashed changes
 
 
 @app.post("/convert/config")
@@ -440,6 +654,7 @@ async def convert_excel_to_config_api(file: UploadFile = File(...)):
     - Updates usage statistics
     - On error: returns HTTP 400 with validation messages
     """
+<<<<<<< Updated upstream
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only .xlsx files are supported.")
 
@@ -456,6 +671,9 @@ async def convert_excel_to_config_api(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail={"messages": messages})
 
     return JSONResponse(content={"config": config, "messages": messages})
+=======
+    return await convert(file=file, mode="config");
+>>>>>>> Stashed changes
 
 
 # ---------- EXAMPLE EXCEL ----------
@@ -469,6 +687,7 @@ def download_example():
     The file 'example.xlsx' must be present at the project root
     (same directory as main.py).
     """
+<<<<<<< Updated upstream
     example_path = "example.xlsx"
     if not os.path.exists(example_path):
         raise HTTPException(status_code=404, detail="Example file not found.")
@@ -487,3 +706,16 @@ def get_stats():
     restricted later if needed.
     """
     return load_stats()
+=======
+    return await convert(file=file, mode="config_schema", schema_file=schema_file);
+
+
+@app.get("/_admin/stats")
+@app.get("/_admin/stats/")
+def admin_stats_alias():
+    """
+    Backward-compatible stats endpoint (legacy path).
+    Returns the same payload as GET /stats.
+    """
+    return get_stats()
+>>>>>>> Stashed changes
