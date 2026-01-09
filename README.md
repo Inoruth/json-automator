@@ -1,82 +1,112 @@
 # JSON Automator
 
-Convertissez vos fichiers **Excel (.xlsx)** en **JSON propre et validé**, sans écrire une seule ligne à la main.
+Convert **Excel (.xlsx)** configuration sheets into **clean, validated JSON** — without writing JSON by hand.
 
-👉 Idéal pour les équipes qui conservent leurs configurations dans Excel
-👉 Fini les erreurs d'inattention, virgules manquantes et champs obligatoires oubliés
-👉 Gratuit pendant la phase bêta
-
----
-
-## 🚀 Essayez en ligne
-
-➡️ **App en ligne :** [https://json-automator.up.railway.app](https://json-automator.up.railway.app)
-
-Aucun compte.
-Téléversez un fichier, obtenez un JSON propre — c’est tout.
+> Excel is treated as an **input UI**, not a long‑term source of truth.
+> If something is wrong, fix the sheet (or schema) and regenerate.
 
 ---
 
-## ✨ Pourquoi cet outil ?
+## 🚀 Live demo
 
-Beaucoup d’équipes (dev, ops, industrie, formation…) utilisent encore Excel pour gérer leurs paramètres.
+➡️ **Web app:** [https://json-automator.up.railway.app](https://json-automator.up.railway.app)
 
-Puis quelqu’un doit :
-
-* copier/coller
-* reformater en JSON
-* vérifier les types à la main
-* corriger les erreurs
-
-➡️ **Perte de temps**
-➡️ **Risque d’erreurs**
-
-JSON Automator automatise ce travail.
-
-> **Vous importez un Excel → vous recevez un JSON validé.**
+* No account
+* Free beta
+* Upload Excel → get JSON
 
 ---
 
-## 🧩 Formats acceptés
+## ✨ Why JSON Automator exists
 
-### 1️⃣ Mode debug — export brut (`rows`)
+Many teams still manage configuration in Excel:
 
-Export direct des données sous forme de lignes JSON :
+* API settings
+* feature flags
+* application parameters
+* environment configs
+
+Then someone has to:
+
+* copy / paste
+* rewrite JSON manually
+* guess types
+* debug production issues caused by small mistakes
+
+JSON Automator removes that friction.
+
+> **Excel in → validated JSON out.**
+
+---
+
+## 🧠 Core idea
+
+* Excel is **easy to edit** by non‑developers
+* JSON is **safe and explicit** for applications
+* The tool sits between both
+
+JSON is **always generated**, never edited by hand.
+
+---
+
+## 🧩 Supported modes
+
+### 1️⃣ Rows mode (debug)
+
+Exports each Excel row as raw JSON using the header names.
+
+Useful to:
+
+* inspect how the file is parsed
+* debug messy or unknown sheets
+
+Example:
 
 ```json
 {
-  "rows": [
-    { "name": "Alice", "age": 22 },
-    { "name": "Bob", "age": 28 }
-  ]
+  "data": {
+    "Sheet1": [
+      { "name": "Alice", "age": 22 },
+      { "name": "Bob", "age": 28 }
+    ]
+  },
+  "messages": []
 }
 ```
 
-Pratique pour vérifier la lecture du fichier.
-
 ---
 
-### 2️⃣ Mode configuration (`config`)
+### 2️⃣ Config key/value mode (validated)
 
-Votre fichier Excel doit contenir au minimum :
+Designed for configuration files.
 
-| colonne | obligatoire | description      |
-| ------- | ----------- | ---------------- |
-| `key`   | ✔           | nom du paramètre |
-| `value` | ✔           | valeur           |
+#### Required columns
 
-Colonnes optionnelles :
+| column  | description     |
+| ------- | --------------- |
+| `key`   | config key name |
+| `value` | config value    |
 
-| colonne    | type                      | rôle                   |
-| ---------- | ------------------------- | ---------------------- |
-| `required` | yes / no                  | valeur obligatoire     |
-| `type`     | int / bool / url / string | validation automatique |
+#### Optional columns
 
-Exemple JSON généré :
+| column     | allowed values            | purpose                  |
+| ---------- | ------------------------- | ------------------------ |
+| `required` | yes / no                  | marks value as mandatory |
+| `type`     | int / bool / url / string | automatic validation     |
+
+Example Excel:
+
+| key       | value                                              | required | type |
+| --------- | -------------------------------------------------- | -------- | ---- |
+| api_url   | [https://api.example.com](https://api.example.com) | yes      | url  |
+| timeout   | 30                                                 | no       | int  |
+| use_cache | true                                               | no       | bool |
+
+Generated JSON:
 
 ```json
 {
-  "config": {
+  "data": {
     "api_url": "https://api.example.com",
     "timeout": 30,
     "use_cache": true
@@ -85,77 +115,92 @@ Exemple JSON généré :
 }
 ```
 
-Et si quelque chose ne va pas, vous obtenez des messages explicites :
+---
 
-```json
-{
-  "messages": [
-    "Ligne 4: valeur obligatoire manquante pour 'token'",
-    "Ligne 5: 'timeout' doit être un entier."
-  ]
-}
-```
+## 🔎 Validation rules
+
+JSON Automator checks:
+
+* duplicate keys
+* missing required values
+* integer / boolean mismatches
+* invalid URLs
+* empty or inconsistent cells
+
+Errors are **explicit** and shown to the user so the Excel file can be fixed.
 
 ---
 
-## 🔎 Validation automatique incluse
+## 🧱 Current limitations
 
-JSON Automator vérifie :
+* Best suited for **flat or lightly‑nested** configs
+* Deep / complex nesting is **not automatic yet**
+* Excel structure must remain consistent
 
-✔ clés dupliquées
-✔ valeurs obligatoires manquantes
-✔ entiers invalides
-✔ booléens incohérents (`yes/no`, `true/false`, etc.)
-✔ URL non valides
+These constraints are **intentional** to keep behavior predictable.
 
 ---
 
-## 🛠️ Stack technique
+## 🧪 Schema direction (in progress)
 
-* **FastAPI** — backend
-* **OpenPyXL** — lecture Excel
-* **Uvicorn** — serveur
-* **Railway** — hébergement
-* UI simple — HTML / JS vanilla
+Based on early feedback, the next evolution is **schema‑driven validation**:
 
-Le projet reste volontairement simple pour rester fiable.
+* teams define a schema (keys, types, required fields, aliases)
+* Excel uploads are validated against it
+* JSON is always regenerated from Excel + schema
 
----
+This makes:
 
-## 🧭 Roadmap (bêta)
-
-* ⏳ téléchargement du JSON généré
-* ⏳ API publique (POST avec fichier)
-* ⏳ sauvegarde de modèles
-* ⏳ compte PRO (limites élevées + fonctionnalités avancées)
-
-> Vous avez une idée utile ?
-> **Ouvrez une issue ou laissez un commentaire !**
-
-👉 [https://github.com/Djelloul94380/json-automator/issues](https://github.com/Djelloul94380/json-automator/issues)
+* Excel a controlled input UI
+* schema the real source of truth
+* JSON fully reproducible
 
 ---
 
-## 🤝 Contribuer / signaler un bug
+## 🛠 Tech stack
 
-Les PRs et retours sont bienvenus.
+* FastAPI
+* OpenPyXL
+* Uvicorn
+* Railway
+* Vanilla HTML / JS
 
-Avant d’ouvrir une issue, merci de :
-
-1. décrire votre fichier Excel
-2. fournir un exemple minimal
-3. coller le message d’erreur
-
----
-
-## 📄 Licence
-
-Projet en bêta — usage libre pendant la phase de test.
+Simple by design.
 
 ---
 
-## ❤️ Auteur
+## 🧭 Roadmap
 
-Développé par **Djelloul** — curieux d’automatisation, simplicité et outils utiles.
+* Download generated JSON
+* Public API (POST Excel → JSON)
+* Schema support
+* Saved templates
+* Paid plan for teams (limits, schemas, API)
 
-Si vous utilisez JSON Automator, dites-le — ça motive énormément 🙂
+---
+
+## 🤝 Feedback & contributions
+
+Ideas, issues, and PRs are welcome.
+
+If reporting a bug, please include:
+
+1. Excel structure
+2. minimal example
+3. error message
+
+➡️ [https://github.com/Djelloul94380/json-automator/issues](https://github.com/Inoruth/json-automator/issues)
+
+---
+
+## 📄 License
+
+Free during beta.
+
+---
+
+## ❤️ Author
+
+Built by **Djelloul**.
+
+If this tool saves you time, feedback is appreciated — it directly shapes the next features.
