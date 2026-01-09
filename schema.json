@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "allow_extra_keys": true,
+  "columns": {
+    "key": ["key", "Key", "name", "Name"],
+    "value": ["value", "Value"],
+    "required": ["required", "Required", "req"],
+    "type": ["type", "Type"],
+    "default": ["default", "Default"]
+  },
+  "keys": {
+    "api_url":   { "type": "url",  "required": true },
+    "timeout":   { "type": "int",  "default": 30 },
+    "use_cache": { "type": "bool", "default": false, "aliases": ["cache_enabled", "useCache"] },
+    "db.host":   { "type": "string", "required": false }
+  }
+}
