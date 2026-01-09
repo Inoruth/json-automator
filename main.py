@@ -274,47 +274,30 @@ def app_ui():
 async def convert(file: UploadFile = File(...), mode: str = "rows", schema_file: UploadFile = File(None)):
     """
     Convert the uploaded Excel file to JSON.
-
-    - **file**: The Excel file to convert (required).
-    - **mode**: Conversion mode, one of 'rows', 'config', or 'config_schema'. Default is 'rows'.
-    - **schema_file**: Optional JSON schema file for 'config_schema' mode.
-
-    Returns a JSON response with the conversion result or error messages.
     """
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload an Excel file (.xlsx).")
 
-    # Load the Excel file
     in_memory_file = BytesIO(await file.read())
     workbook = openpyxl.load_workbook(in_memory_file, data_only=True)
 
-    # Initialize result container
     result = {"sheets": {}, "messages": []}
 
-    # Process each sheet in the workbook
     for sheet_name in workbook.sheetnames:
         sheet = workbook[sheet_name]
-        headers = [cell.value for cell in sheet[1]]  # Get header row
-
-        # Convert rows to JSON objects
+        headers = [cell.value for cell in sheet[1]]
         rows = []
         for row in sheet.iter_rows(min_row=2, values_only=True):
             obj = {headers[i]: row[i] for i in range(len(headers))}
             rows.append(obj)
-
-        # Add to result
         result["sheets"][sheet_name] = rows
 
-    # Handle different conversion modes
     if mode == "rows":
-        # "Rows" mode just returns the raw rows as JSON
         result = {"data": result["sheets"], "messages": result["messages"]}
     elif mode == "config":
-        # "Config" mode expects two columns: "key" and "value"
         for sheet_name, rows in result["sheets"].items():
             for row in rows:
                 if "key" in row and "value" in row:
-                    # Simple key/value pair
                     result["messages"].append(f"Config: {row['key']} = {row['value']}")
                 else:
                     result["messages"].append(f"Row in sheet '{sheet_name}' is missing 'key' or 'value': {row}")
@@ -468,6 +451,20 @@ async def convert(file: UploadFile = File(...), mode: str = "rows", schema_file:
         result = {"data": final_config, "messages": result["messages"]};
     else:
         raise HTTPException(status_code=400, detail="Invalid mode. Choose 'rows', 'config', or 'config_schema'.");
+
+    # Update stats minimally without refactor
+    try:
+        stats = load_stats()
+        stats["total"] = stats.get("total", 0) + 1
+        if mode == "rows":
+            stats["rows"] = stats.get("rows", 0) + 1
+        elif mode in ("config", "config_schema"):
+            # Count schema mode under 'config' to keep legacy stats keys unchanged
+            stats["config"] = stats.get("config", 0) + 1
+        save_stats(stats)
+    except Exception:
+        # Do not fail the request if stats cannot be saved
+        pass
 
     return JSONResponse(content=result);
 
